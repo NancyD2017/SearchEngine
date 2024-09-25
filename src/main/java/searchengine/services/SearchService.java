@@ -5,9 +5,7 @@ import org.apache.lucene.morphology.russian.RussianLuceneMorphology;
 import org.springframework.stereotype.Service;
 import searchengine.dto.indexing.SearchData;
 import searchengine.dto.indexing.SearchResponse;
-import searchengine.model.Lemma;
-import searchengine.model.Page;
-import searchengine.model.Site;
+import searchengine.model.*;
 
 import java.io.IOException;
 import java.util.*;
