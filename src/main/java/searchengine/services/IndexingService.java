@@ -26,6 +26,8 @@ public class IndexingService {
     private final ForkJoinPool pool = new ForkJoinPool(Runtime.getRuntime().availableProcessors());
     private final HashMap<String, Lemma> lemmasNamesAndLemmas = new HashMap<>();
     private final HashMap<Site, List<Page>> pagesInSite = new HashMap<>();
+    static ArrayList<Thread> lemmatisationThreads = new ArrayList<>();
+    IndexingResponse fillIndexLemmaDatabasesError = null;
 
     public IndexingResponse startIndexing() {
         IndexingResponse response = new IndexingResponse();
@@ -58,6 +60,7 @@ public class IndexingService {
             siteRepository.save(siteEntity);
 
             indexingForPageDatabase(site, siteEntity);
+            if (fillIndexLemmaDatabasesError != null) return fillIndexLemmaDatabasesError;
         }
         response.setResult(true);
         return response;
@@ -77,7 +80,11 @@ public class IndexingService {
     public IndexingResponse indexPage(String path) {
         try {
             Lemmatisation.luceneMorph = new RussianLuceneMorphology();
-        } catch (IOException ignored) {
+        } catch (IOException e) {
+            IndexingResponse response = new IndexingResponse();
+            response.setResult(false);
+            response.setError("Не удалось подключить библиотеку RussianLuceneMorphology");
+            return response;
         }
         IndexingResponse response = new IndexingResponse();
         Site currentSiteEntity = siteRepository.findSiteByUrl(path);
@@ -105,31 +112,51 @@ public class IndexingService {
     private void fillIndexLemmaDatabases(Page page) {
         try {
             Lemmatisation.luceneMorph = new RussianLuceneMorphology();
-        } catch (IOException ignored) {
+        } catch (IOException e) {
+            IndexingResponse response = new IndexingResponse();
+            response.setResult(false);
+            response.setError("Не удалось подключить библиотеку RussianLuceneMorphology");
+            fillIndexLemmaDatabasesError = response;
         }
         Lemmatisation lemmatisation = new Lemmatisation(page.getContent());
         proceedLemmatisation(lemmatisation, page);
     }
 
     private void proceedLemmatisation(Lemmatisation lemmatisation, Page page) {
-        List<Index> indexList = new ArrayList<>();
+        List<Index> indexList = Collections.synchronizedList(new ArrayList<>());
         lemmatisation.startLemmatisation()
                 .forEach((word, count) -> {
-                    Lemma currentLemma = lemmasNamesAndLemmas.get(word);
-                    if (currentLemma == null) {
-                        Lemma ld = new Lemma();
-                        indexList.add(saveLemmaIndex(ld, 1, word, page.getSite(), page, count));
-                    } else {
-                        indexList.add(
-                                saveLemmaIndex(currentLemma,
-                                        currentLemma.getFrequency() + 1,
-                                        currentLemma.getLemma(),
-                                        currentLemma.getSite(),
-                                        page,
-                                        count));
-                    }
+                    Runnable createLemma = () -> {
+                        Lemma currentLemma = lemmasNamesAndLemmas.get(word);
+                        if (currentLemma == null) {
+                            Lemma ld = new Lemma();
+                            indexList.add(saveLemmaIndex(ld, 1, word, page.getSite(), page, count));
+                        } else {
+                            indexList.add(
+                                    saveLemmaIndex(currentLemma,
+                                            currentLemma.getFrequency() + 1,
+                                            currentLemma.getLemma(),
+                                            currentLemma.getSite(),
+                                            page,
+                                            count));
+                        }
+                    };
+                    Thread t = new Thread(createLemma);
+                    lemmatisationThreads.add(t);
+                    t.start();
                 });
+        runThreads(lemmatisationThreads);
         indexRepository.saveAll(indexList);
+    }
+
+    private static void runThreads(ArrayList<Thread> threads) {
+        for (Thread t : threads) {
+            try {
+                t.join();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
     }
 
     private Index saveLemmaIndex(Lemma lemma, int frequency, String lemmaWord, Site site, Page page, int rank) {
@@ -176,7 +203,7 @@ public class IndexingService {
                 addPageToSite(siteEntity, page);
                 pageRepository.save(page);
                 if (page.getCode() < 400) {
-                    fillIndexLemmaDatabases(page);
+                        fillIndexLemmaDatabases(page);
                 }
             } catch (Exception ignored) {
             }
@@ -224,11 +251,13 @@ public class IndexingService {
                 pageEntity.setContent("Error");
                 siteEntity.setStatus(Status.FAILED);
                 siteEntity.setLastError("Не удалось установить соединение с сайтом");
+                siteRepository.save(siteEntity);
             }
             siteEntity.setStatusTime(LocalDateTime.now());
         } catch (Exception e) {
             siteEntity.setStatus(Status.FAILED);
             siteEntity.setLastError(e.getMessage());
+            siteRepository.save(siteEntity);
         }
         return pageEntity;
     }

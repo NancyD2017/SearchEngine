@@ -86,6 +86,7 @@ public class SearchService {
                 searchData.setRelevance(pageDoubleHashMap.get(p));
                 searchData.setSnippet(snippetCreator.createSnippet());
                 searchDataList.add(searchData);
+                response.setCount(response.getCount() + snippetCreator.countOfSnippets);
             });
 
         });
@@ -98,7 +99,6 @@ public class SearchService {
                     .stream()
                     .sorted(Comparator.comparingDouble(SearchData::getRelevance))
                     .toList());
-            response.setCount(pageList.size());
         }
         return response;
     }

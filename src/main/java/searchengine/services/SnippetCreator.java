@@ -19,6 +19,7 @@ public class SnippetCreator {
     private final int limit;
     private HashMap<String, List<String>> normalFormsOfContextWords = new HashMap<>();
     private List<String> queryW = new ArrayList<>();
+    public int countOfSnippets = 0;
 
     public String createSnippet() {
         String content = Jsoup.parse(p.getContent()).text().toLowerCase();
@@ -43,6 +44,7 @@ public class SnippetCreator {
                     if (currentLimit < limit && currentOffset > offset) {
                         currentLimit++;
                         if (!snippetsContainWord(queryW, word, readySnippet)) {
+                            countOfSnippets++;
                             snippets.append("<p>").append(readySnippet).append("</p>");
                         }
                     }

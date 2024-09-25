@@ -23,7 +23,7 @@ public class IndexingServiceTest {
     @Autowired
     LemmaRepository lemmaRepository;
     @Test
-    public void test1(){ //21500
+    public void testIndexServiceTime(){ //15200
         long begin = System.currentTimeMillis();
         SitesList sl = new SitesList();
         Site s = new Site();
