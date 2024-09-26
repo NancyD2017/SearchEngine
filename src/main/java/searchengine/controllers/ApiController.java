@@ -51,8 +51,8 @@ public class ApiController {
     }
 
     @PostMapping("/indexPage")
-    public ResponseEntity<IndexingResponse> indexPage(@RequestBody String path) {
-        return ResponseEntity.ok(indexingService.indexPage(path));
+    public ResponseEntity<IndexingResponse> indexPage(@RequestParam String url) {
+        return ResponseEntity.ok(indexingService.indexPage(url));
     }
 
     @GetMapping("/search")

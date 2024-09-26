@@ -25,7 +25,6 @@ public class IndexingService {
     private AtomicBoolean isIndexingStopped = new AtomicBoolean(false);
     private final ForkJoinPool pool = new ForkJoinPool(Runtime.getRuntime().availableProcessors());
     private final HashMap<String, Lemma> lemmasNamesAndLemmas = new HashMap<>();
-    private final HashMap<Site, List<Page>> pagesInSite = new HashMap<>();
     static ArrayList<Thread> lemmatisationThreads = new ArrayList<>();
     IndexingResponse fillIndexLemmaDatabasesError = null;
 
@@ -95,14 +94,10 @@ public class IndexingService {
             return response;
         }
 
-        List<Page> pages = pagesInSite.get(currentSiteEntity);
-        pages.forEach(p -> {
-            List<Index> indexes = indexRepository.findIndexesByPageId(p.getId());
-            if (indexes == null || indexes.isEmpty()) {
-                Lemmatisation ls = new Lemmatisation(p.getContent());
-                proceedLemmatisation(ls, p);
-            }
-        });
+        List<String> paths = pageRepository.findPagesBySite(currentSiteEntity).stream().map(Page::getPath).toList();
+        TreeSet<String> linksSet = new TreeSet<>(pool.invoke(new SiteGetterLinks(currentSiteEntity.getUrl())));
+        linksSet.removeAll(paths);
+        processLinks(currentSiteEntity, linksSet);
 
         response.setResult(true);
 
@@ -200,21 +195,12 @@ public class IndexingService {
             Page pageEntity = new Page();
             try {
                 Page page = getValues(siteEntity, pageEntity, link);
-                addPageToSite(siteEntity, page);
                 pageRepository.save(page);
                 if (page.getCode() < 400) {
                         fillIndexLemmaDatabases(page);
                 }
             } catch (Exception ignored) {
             }
-        }
-    }
-
-    private void addPageToSite(Site siteEntity, Page page) {
-        if (!pagesInSite.containsKey(siteEntity)) {
-            pagesInSite.put(siteEntity, new ArrayList<>(List.of(page)));
-        } else {
-            pagesInSite.get(siteEntity).add(page);
         }
     }
 

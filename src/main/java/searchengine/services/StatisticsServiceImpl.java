@@ -6,7 +6,6 @@ import searchengine.config.*;
 import searchengine.dto.statistics.*;
 import searchengine.model.Site;
 
-import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.*;
 import static searchengine.controllers.ApiController.*;
@@ -39,8 +38,7 @@ public class StatisticsServiceImpl implements StatisticsService {
             if (sd != null) {
                 item.setStatus(sd.getStatus().toString());
                 item.setError(sd.getLastError());
-                long statusTime = sd.getStatusTime().toInstant(ZoneOffset.UTC).getEpochSecond();
-                item.setStatusTime(statusTime);
+                item.setStatusTime(sd.getStatusTime());
             }
 
             total.setPages(total.getPages() + pages);

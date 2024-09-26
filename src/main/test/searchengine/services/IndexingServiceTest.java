@@ -27,7 +27,7 @@ public class IndexingServiceTest {
         long begin = System.currentTimeMillis();
         SitesList sl = new SitesList();
         Site s = new Site();
-        s.setName("fitness");
+        s.setName("fitness house");
         s.setUrl("https://market.fitnesshouse.ru");
         sl.setSites(List.of(s));
 
