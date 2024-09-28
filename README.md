@@ -25,7 +25,7 @@
 2. Создайте базу данных для проекта.
 3. Склонируйте репозиторий проекта:
    
-   git clone https://github.com/your-username/search-engine.git
+   git clone https://github.com/NancyD2017/SearchEngine.git
    
 4. Перейдите в директорию проекта:
    
