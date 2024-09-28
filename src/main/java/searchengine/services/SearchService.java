@@ -10,6 +10,7 @@ import searchengine.model.*;
 import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
 import static searchengine.controllers.ApiController.*;
@@ -76,18 +77,14 @@ public class SearchService {
             PageGetterInfo pgr = new PageGetterInfo(allLemmaList);
             HashMap<Page, Double> pageDoubleHashMap = pgr.findRelevanceRel();
 
+            long begin = System.currentTimeMillis();
             pageList.forEach(p -> {
                 SnippetCreator snippetCreator = new SnippetCreator(p, allLemmaList, offset, limit);
-                SearchData searchData = new SearchData();
-                searchData.setSiteName(s.getName());
-                searchData.setSite(p.getPath());
-                searchData.setTitle(pgr.findPageTitle(p));
-                searchData.setUri(p.getPath().contains(s.getUrl()) ? p.getPath().replace(s.getUrl(), "") : p.getPath());
-                searchData.setRelevance(pageDoubleHashMap.get(p));
-                searchData.setSnippet(snippetCreator.createSnippet());
-                searchDataList.add(searchData);
+                List<SearchData> searchData = snippetCreator.createSnippet(s, pgr, pageDoubleHashMap);
+                searchDataList.addAll(searchData);
                 response.setCount(response.getCount() + snippetCreator.countOfSnippets);
             });
+            System.out.println("Закончил обработку page " + (System.currentTimeMillis() - begin));
 
         });
 

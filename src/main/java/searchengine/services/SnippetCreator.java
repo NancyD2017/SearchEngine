@@ -4,91 +4,100 @@ import lombok.RequiredArgsConstructor;
 import org.apache.lucene.morphology.LuceneMorphology;
 import org.apache.lucene.morphology.russian.RussianLuceneMorphology;
 import org.jsoup.Jsoup;
+import searchengine.dto.indexing.SearchData;
 import searchengine.model.*;
 
 import java.io.IOException;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicLong;
 
-@RequiredArgsConstructor
 public class SnippetCreator {
-    StringBuilder snippets = new StringBuilder();
     private final Page p;
     private final List<Lemma> queryWords;
     private LuceneMorphology luceneMorphology;
     private final int offset;
     private final int limit;
     private HashMap<String, List<String>> normalFormsOfContextWords = new HashMap<>();
-    private List<String> queryW = new ArrayList<>();
+    private List<String> queryW;
     public int countOfSnippets = 0;
+    private final String content;
 
-    public String createSnippet() {
-        String content = Jsoup.parse(p.getContent()).text().toLowerCase();
-        lemmatisationForContent(content);
-        queryW = queryWords.stream().map(Lemma::getLemma).toList();
+    public SnippetCreator(Page p, List<Lemma> queryWords, int offset, int limit) {
+        this.p = p;
+        this.queryWords = queryWords;
+        this.offset = offset;
+        this.limit = limit;
+        try {
+            this.luceneMorphology = new RussianLuceneMorphology();
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+        this.queryW = queryWords.stream().map(Lemma::getLemma).toList();
+
+        this.content = Jsoup.parse(p.getContent()).text().toLowerCase();
+        String[] contentSplit = content.split("[^А-я]+");
+        for (String word : contentSplit) {
+            if (!word.isBlank() && !word.isEmpty()) {
+                String normalizedWord = luceneMorphology.getNormalForms(word).get(0);
+                normalFormsOfContextWords.computeIfAbsent(normalizedWord, k -> new ArrayList<>()).add(word);
+            }
+        }
+    }
+
+    public List<SearchData> createSnippet(Site site, PageGetterInfo pgr, HashMap<Page, Double> pageDoubleHashMap) {
+        List<String> snippets = new ArrayList<>();
         int currentOffset = 0;
         int currentLimit = 0;
 
         for (int word = 0; word < queryWords.size(); word++) {
-            String alteredContent = content;
+            String alteredContent = this.content;
 
-            List<String> formInContent = normalFormsOfContextWords.get(queryW.get(word));
-            for (String s : formInContent) {
-                int wordIndex = alteredContent.indexOf(s);
+            for (String s : normalFormsOfContextWords.get(queryW.get(word))) {
+                int wordIndex = alteredContent.indexOf(" " + s);
                 while (wordIndex != -1) {
                     currentOffset++;
                     int snippetStart = Math.max(0, wordIndex - 120);
                     int snippetEnd = Math.min(alteredContent.length(), wordIndex + 120);
-                    String snippetContent = alteredContent.substring(snippetStart, snippetEnd);
-                    String readySnippet = beautifySnippet(snippetContent);
+                    String readySnippet = beautifySnippet(alteredContent.substring(snippetStart, snippetEnd));
 
                     if (currentLimit < limit && currentOffset > offset) {
                         currentLimit++;
                         if (!snippetsContainWord(queryW, word, readySnippet)) {
                             countOfSnippets++;
-                            snippets.append("<p>").append(readySnippet).append("</p>");
+                            snippets.add(boldAllWords(readySnippet));
                         }
                     }
                     alteredContent = alteredContent.substring(snippetEnd);
-                    wordIndex = alteredContent.indexOf(s, wordIndex);
+                    wordIndex = alteredContent.indexOf(" " + s, wordIndex);
                 }
             }
         }
-        return boldAllWords(snippets.toString());
+        return makeData(snippets, site, pgr, pageDoubleHashMap);
     }
 
-    private void lemmatisationForContent(String content) {
-        try {
-            luceneMorphology = new RussianLuceneMorphology();
-        } catch (IOException ignored) {
-        }
-        String[] contentSplit = content.split("[^А-я]+");
-        for (String word : contentSplit) {
-            String normalizedWord = luceneMorphology.getNormalForms(word).get(0);
-            if (!normalFormsOfContextWords.containsKey(normalizedWord)) {
-                normalFormsOfContextWords.put(normalizedWord, new ArrayList<>(List.of(word)));
-            } else {
-                normalFormsOfContextWords.get(normalizedWord).add(word);
-            }
-        }
+    private List<SearchData> makeData(List<String> snippets, Site site, PageGetterInfo pgr, HashMap<Page, Double> pageDoubleHashMap) {
+        List<SearchData> searchDataList = new ArrayList<>();
+
+        snippets.forEach(s -> {
+            SearchData searchData = new SearchData();
+            searchData.setSiteName(site.getName());
+            searchData.setSite(p.getPath());
+            searchData.setTitle(pgr.findPageTitle(p));
+            searchData.setUri(p.getPath()
+                    .contains(site.getUrl()) ? p.getPath().replace(site.getUrl(), "") : p.getPath());
+            searchData.setRelevance(pageDoubleHashMap.get(p));
+            searchData.setSnippet(s);
+            searchDataList.add(searchData);
+        });
+
+        return searchDataList;
     }
 
     private String boldAllWords(String snippets) {
         for (String word : queryW) {
             for (String formedWord : normalFormsOfContextWords.get(word)) {
-                int firstIndex = snippets.indexOf(formedWord);
-
-                while (firstIndex != -1) {
-                    int wordEnd = snippets.substring(firstIndex).indexOf(' ');
-                    boolean wordIsMarked = snippets.charAt(firstIndex - 1) == '>' && snippets.charAt(firstIndex + wordEnd - 1) == '>';
-                    if (!wordIsMarked) {
-                        snippets = snippets.substring(0, firstIndex)
-                                + "<b>"
-                                + snippets.substring(firstIndex, firstIndex + wordEnd)
-                                + "</b>"
-                                + snippets.substring(firstIndex + wordEnd);
-                    }
-
-                    firstIndex = snippets.indexOf(formedWord, firstIndex + wordEnd);
+                if (!snippets.contains("<b>" + formedWord + "</b>")) {
+                    snippets = snippets.replaceAll(" " + formedWord, " <b>" + formedWord + "</b>");
                 }
             }
         }
@@ -107,7 +116,7 @@ public class SnippetCreator {
 
         snippet = sb.toString();
         for (int i = 0; i < currentWord; i++) {
-            if (snippet.contains(queryWords.get(i))) return true;
+            if (snippet.contains(" " + queryWords.get(i))) return true;
         }
         return false;
     }
