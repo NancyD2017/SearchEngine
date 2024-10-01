@@ -81,6 +81,11 @@ public class IndexingService {
         if (r.isResult()) return r;
         IndexingResponse response = new IndexingResponse();
 
+        if (pageRepository.findAll().stream().map(Page::getPath).toList().contains(path)) {
+            response.setResult(false);
+            response.setError("Данная страница уже была проиндексирована");
+            return response;
+        }
         boolean toBreak = proceedIndexingPage(path);
 
         if (!toBreak) {
