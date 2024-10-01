@@ -16,9 +16,36 @@ import static searchengine.controllers.ApiController.*;
 @Service
 @RequiredArgsConstructor
 public class SearchService {
+    private Map<String, Integer> sortedQuery;
+    private List<SearchData> searchDataList;
+    private List<Page> pageList;
+    private List<Lemma> allLemmaList;
+
     public SearchResponse search(String query, String url, int offset, int limit) {
         SearchResponse response = new SearchResponse();
+        createSortedQuery(query);
+        int querySize = sortedQuery.size();
 
+        List<Site> sites = siteRepository.findSiteByUrl(url) == null
+                ? siteRepository.findAll()
+                : List.of(siteRepository.findSiteByUrl(url));
+
+        AtomicBoolean isFirst = new AtomicBoolean(true);
+        List<SearchData> resultList = new ArrayList<>();
+        sites.forEach(s -> resultList.addAll(proceedSearch(querySize, isFirst, offset, limit, response, s)));
+
+        if (query.isEmpty() || query.isBlank()) {
+            response.setError("Задан пустой поисковый запрос");
+        } else {
+            response.setResult(true);
+            response.setData(resultList
+                    .stream()
+                    .sorted(Comparator.comparingDouble(SearchData::getRelevance).reversed())
+                    .toList());
+        }
+        return response;
+    }
+    private void createSortedQuery(String query){
         Lemmatisation lemmatisation = new Lemmatisation(query.toLowerCase());
         try {
             Lemmatisation.luceneMorph = new RussianLuceneMorphology();
@@ -26,7 +53,7 @@ public class SearchService {
         }
 
         HashMap<String, Integer> processedQuery = lemmatisation.startLemmatisation();
-        Map<String, Integer> sortedQuery = processedQuery.entrySet().stream()
+        sortedQuery = processedQuery.entrySet().stream()
                 .sorted(Comparator.comparingInt(Map.Entry::getValue))
                 .collect(Collectors.toMap(
                         Map.Entry::getKey,
@@ -36,63 +63,39 @@ public class SearchService {
                         },
                         LinkedHashMap::new
                 ));
+    }
+    private void createArrays(){
+        searchDataList = new ArrayList<>();
+        pageList = new ArrayList<>();
+        allLemmaList = new ArrayList<>();
+    }
+    private List<SearchData> proceedSearch(int querySize, AtomicBoolean isFirst, int offset, int limit, SearchResponse response, Site s){
+        createArrays();
+        sortedQuery.forEach((word, count) -> {
+            if (querySize <= 10 || count <= 3 * querySize) {
 
-        int querySize = sortedQuery.size();
+                List<Lemma> lemmasList = lemmaRepository.findLemmaBySiteIdAndLemma(s.getId(), word);
+                allLemmaList.addAll(lemmasList);
+                List<Page> currentPageList = new ArrayList<>();
 
-        List<Site> sites =
-                siteRepository.findSiteByUrl(url) == null
-                ? siteRepository.findAll()
-                : List.of(siteRepository.findSiteByUrl(url));
+                lemmasList.forEach(l -> l.getIndexes()
+                        .forEach(i -> currentPageList.add(indexRepository.findIndexByIndexId(i.getId()).getPage())));
 
-        List<SearchData> searchDataList = new ArrayList<>();
-
-        List<Page> pageList = new ArrayList<>();
-        List<Lemma> allLemmaList = new ArrayList<>();
-        AtomicBoolean isFirst = new AtomicBoolean(true);
-        sites.forEach(s -> {
-            sortedQuery.forEach((word, count) -> {
-                if (querySize <= 10 || count <= 3 * querySize) {
-
-                    List<Lemma> lemmasList = lemmaRepository.findLemmaBySiteIdAndLemma(s.getId(), word);
-                    allLemmaList.addAll(lemmasList);
-                    List<Page> currentPageList = new ArrayList<>();
-
-                    lemmasList.forEach(l ->
-                            l.getIndexes()
-                                    .forEach(i ->
-                                            currentPageList.add(
-                                                    indexRepository.findIndexByIndexId(i.getId()).getPage()
-                                            )
-                                    )
-                    );
-
-                    if (isFirst.get()) {
-                        isFirst.set(false);
-                        pageList.addAll(currentPageList);
-                    } else pageList.retainAll(currentPageList);
-                }
-            });
-            PageGetterInfo pgr = new PageGetterInfo(allLemmaList);
-            HashMap<Page, Double> pageDoubleHashMap = pgr.findRelevanceRel();
-
-            pageList.forEach(p -> {
-                SnippetCreator snippetCreator = new SnippetCreator(p, allLemmaList, offset, limit);
-                List<SearchData> searchData = snippetCreator.createSnippet(pgr, pageDoubleHashMap);
-                searchDataList.addAll(searchData);
-                response.setCount(response.getCount() + snippetCreator.countOfSnippets);
-            });
-
+                if (isFirst.get()) {
+                    isFirst.set(false);
+                    pageList.addAll(currentPageList);
+                } else pageList.retainAll(currentPageList);
+            }
         });
+        PageGetterInfo pgr = new PageGetterInfo(allLemmaList);
+        HashMap<Page, Double> pageDoubleHashMap = pgr.findRelevanceRel();
 
-        if (query.isEmpty() || query.isBlank()) {
-            response.setError("Задан пустой поисковый запрос");
-        } else {
-            response.setResult(true);
-            response.setData(searchDataList
-                    .stream()
-                    .sorted(Comparator.comparingDouble(SearchData::getRelevance).reversed())
-                    .toList());
-        }
-        return response;
+        pageList.forEach(p -> {
+            SnippetCreator snippetCreator = new SnippetCreator(p, allLemmaList, offset, limit);
+            List<SearchData> searchData = snippetCreator.createSnippet(pgr, pageDoubleHashMap);
+            searchDataList.addAll(searchData);
+            response.setCount(response.getCount() + snippetCreator.countOfSnippets);
+        });
+        return searchDataList;
     }
 }
