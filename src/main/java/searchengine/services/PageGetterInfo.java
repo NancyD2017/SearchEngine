@@ -14,23 +14,23 @@ public class PageGetterInfo {
     private HashMap<Page, Double> relRelevances = new HashMap<>();
 
     public HashMap<Page, Double> findRelevanceRel() {
-
-        for (Lemma lemma : lemmasList) {
-            Double currentRankSum = lemma.getIndexes()
-                            .stream()
-                            .mapToDouble(Index::getRank)
-                            .sum();
-            lemma.getIndexes().forEach(i -> relRelevances.put(i.getPage(), currentRankSum));
-        }
+        lemmasList.forEach(l ->
+                l.getIndexes()
+                        .forEach((Index index) ->
+                                relRelevances.compute(index.getPage(), (page, currentRel) ->
+                                        currentRel == null
+                                                ? index.getRank()
+                                                : currentRel + index.getRank())));
         try {
             Double maxRel = relRelevances.values().stream().max(Comparator.naturalOrder()).get();
             relRelevances.replaceAll((page, absRel) -> absRel / maxRel);
-        } catch (NoSuchElementException ignored){
+        } catch (NoSuchElementException ignored) {
         }
 
         return relRelevances;
     }
-    public String findPageTitle(Page page){
+
+    public String findPageTitle(Page page) {
         try {
             Document doc = Jsoup.connect(page.getPath()).get();
             return doc.title();

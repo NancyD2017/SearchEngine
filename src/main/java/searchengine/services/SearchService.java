@@ -3,14 +3,12 @@ package searchengine.services;
 import lombok.RequiredArgsConstructor;
 import org.apache.lucene.morphology.russian.RussianLuceneMorphology;
 import org.springframework.stereotype.Service;
-import searchengine.dto.indexing.SearchData;
-import searchengine.dto.indexing.SearchResponse;
+import searchengine.dto.indexing.*;
 import searchengine.model.*;
 
 import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
 import static searchengine.controllers.ApiController.*;
@@ -77,14 +75,12 @@ public class SearchService {
             PageGetterInfo pgr = new PageGetterInfo(allLemmaList);
             HashMap<Page, Double> pageDoubleHashMap = pgr.findRelevanceRel();
 
-            long begin = System.currentTimeMillis();
             pageList.forEach(p -> {
                 SnippetCreator snippetCreator = new SnippetCreator(p, allLemmaList, offset, limit);
                 List<SearchData> searchData = snippetCreator.createSnippet(pgr, pageDoubleHashMap);
                 searchDataList.addAll(searchData);
                 response.setCount(response.getCount() + snippetCreator.countOfSnippets);
             });
-            System.out.println("Закончил обработку page " + (System.currentTimeMillis() - begin));
 
         });
 
@@ -94,7 +90,7 @@ public class SearchService {
             response.setResult(true);
             response.setData(searchDataList
                     .stream()
-                    .sorted(Comparator.comparingDouble(SearchData::getRelevance))
+                    .sorted(Comparator.comparingDouble(SearchData::getRelevance).reversed())
                     .toList());
         }
         return response;
