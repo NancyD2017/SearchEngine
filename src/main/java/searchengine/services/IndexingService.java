@@ -77,44 +77,59 @@ public class IndexingService {
     }
 
     public IndexingResponse indexPage(String path) {
-        try {
-            Lemmatisation.luceneMorph = new RussianLuceneMorphology();
-        } catch (IOException e) {
-            IndexingResponse response = new IndexingResponse();
-            response.setResult(false);
-            response.setError("Не удалось подключить библиотеку RussianLuceneMorphology");
-            return response;
-        }
+        IndexingResponse r = assignLuceneMorph();
+        if (r.isResult()) return r;
         IndexingResponse response = new IndexingResponse();
-        Site currentSiteEntity = siteRepository.findSiteByUrl(path);
 
-        if (currentSiteEntity == null) {
+        boolean toBreak = proceedIndexingPage(path);
+
+        if (!toBreak) {
             response.setResult(false);
             response.setError("Данная страница находится за пределами сайтов, указанных в конфигурационном файле");
             return response;
         }
 
-        List<String> paths = pageRepository.findPagesBySite(currentSiteEntity).stream().map(Page::getPath).toList();
-        TreeSet<String> linksSet = new TreeSet<>(pool.invoke(new SiteGetterLinks(currentSiteEntity.getUrl())));
-        linksSet.removeAll(paths);
-        processLinks(currentSiteEntity, linksSet);
-
         response.setResult(true);
-
         return response;
     }
 
+    private boolean proceedIndexingPage(String path) {
+        List<Site> sites = siteRepository.findAll();
+        boolean toBreak = false;
+        for (Site site : sites) {
+            List<String> paths = pageRepository.findPagesBySite(site).stream().map(Page::getPath).toList();
+            Set<String> linksSet = new TreeSet<>(pool.invoke(new SiteGetterLinks(site.getUrl())));
+            paths.forEach(linksSet::remove);
+
+            for (String l : linksSet) {
+                if (l.equals(path)) {
+                    toBreak = true;
+                    processLinks(site, new TreeSet<>(Collections.singleton(l)));
+                    break;
+                }
+            }
+
+            if (toBreak) break;
+        }
+        return toBreak;
+    }
+
     private void fillIndexLemmaDatabases(Page page) {
+        assignLuceneMorph();
+        Lemmatisation lemmatisation = new Lemmatisation(page.getContent());
+        proceedLemmatisation(lemmatisation, page);
+    }
+
+    private IndexingResponse assignLuceneMorph() {
+        IndexingResponse response = new IndexingResponse();
         try {
             Lemmatisation.luceneMorph = new RussianLuceneMorphology();
         } catch (IOException e) {
-            IndexingResponse response = new IndexingResponse();
             response.setResult(false);
             response.setError("Не удалось подключить библиотеку RussianLuceneMorphology");
             fillIndexLemmaDatabasesError = response;
         }
-        Lemmatisation lemmatisation = new Lemmatisation(page.getContent());
-        proceedLemmatisation(lemmatisation, page);
+        return response;
     }
 
     private void proceedLemmatisation(Lemmatisation lemmatisation, Page page) {
@@ -197,7 +212,7 @@ public class IndexingService {
                 Page page = getValues(siteEntity, pageEntity, link);
                 pageRepository.save(page);
                 if (page.getCode() < 400) {
-                        fillIndexLemmaDatabases(page);
+                    fillIndexLemmaDatabases(page);
                 }
             } catch (Exception ignored) {
             }
