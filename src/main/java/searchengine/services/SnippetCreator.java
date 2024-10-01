@@ -1,6 +1,5 @@
 package searchengine.services;
 
-import lombok.RequiredArgsConstructor;
 import org.apache.lucene.morphology.LuceneMorphology;
 import org.apache.lucene.morphology.russian.RussianLuceneMorphology;
 import org.jsoup.Jsoup;
@@ -9,7 +8,6 @@ import searchengine.model.*;
 
 import java.io.IOException;
 import java.util.*;
-import java.util.concurrent.atomic.AtomicLong;
 
 public class SnippetCreator {
     private final Page p;
@@ -44,7 +42,7 @@ public class SnippetCreator {
         }
     }
 
-    public List<SearchData> createSnippet(Site site, PageGetterInfo pgr, HashMap<Page, Double> pageDoubleHashMap) {
+    public List<SearchData> createSnippet(PageGetterInfo pgr, HashMap<Page, Double> pageDoubleHashMap) {
         List<String> snippets = new ArrayList<>();
         int currentOffset = 0;
         int currentLimit = 0;
@@ -58,7 +56,7 @@ public class SnippetCreator {
                     currentOffset++;
                     int snippetStart = Math.max(0, wordIndex - 120);
                     int snippetEnd = Math.min(alteredContent.length(), wordIndex + 120);
-                    String readySnippet = beautifySnippet(alteredContent.substring(snippetStart, snippetEnd));
+                    String readySnippet = beautifySnippet(alteredContent.substring(snippetStart, snippetEnd), s);
 
                     if (currentLimit < limit && currentOffset > offset) {
                         currentLimit++;
@@ -72,19 +70,19 @@ public class SnippetCreator {
                 }
             }
         }
-        return makeData(snippets, site, pgr, pageDoubleHashMap);
+        return makeData(snippets, pgr, pageDoubleHashMap);
     }
 
-    private List<SearchData> makeData(List<String> snippets, Site site, PageGetterInfo pgr, HashMap<Page, Double> pageDoubleHashMap) {
+    private List<SearchData> makeData(List<String> snippets, PageGetterInfo pgr, HashMap<Page, Double> pageDoubleHashMap) {
         List<SearchData> searchDataList = new ArrayList<>();
 
         snippets.forEach(s -> {
             SearchData searchData = new SearchData();
-            searchData.setSiteName(site.getName());
-            searchData.setSite(p.getPath());
+            searchData.setSiteName(p.getSite().getName());
+            searchData.setSite(p.getSite().getUrl());
             searchData.setTitle(pgr.findPageTitle(p));
             searchData.setUri(p.getPath()
-                    .contains(site.getUrl()) ? p.getPath().replace(site.getUrl(), "") : p.getPath());
+                    .contains(p.getSite().getUrl()) ? p.getPath().replace(p.getSite().getUrl(), "") : "");
             searchData.setRelevance(pageDoubleHashMap.get(p));
             searchData.setSnippet(s);
             searchDataList.add(searchData);
@@ -94,8 +92,8 @@ public class SnippetCreator {
     }
 
     private String boldAllWords(String snippets) {
-        for (String word : queryW) {
-            for (String formedWord : normalFormsOfContextWords.get(word)) {
+        for (String word : queryW.stream().sorted(Comparator.comparing(String::length).reversed()).toList()) {
+            for (String formedWord : normalFormsOfContextWords.get(word).stream().sorted(Comparator.comparing(String::length).reversed()).toList()) {
                 if (!snippets.contains("<b>" + formedWord + "</b>")) {
                     snippets = snippets.replaceAll(" " + formedWord, " <b>" + formedWord + "</b>");
                 }
@@ -121,10 +119,15 @@ public class SnippetCreator {
         return false;
     }
 
-    private String beautifySnippet(String trimmedContent) {
+    private String beautifySnippet(String trimmedContent, String s) {
         int beginIndex = trimmedContent.indexOf(' ');
         int endIndex = trimmedContent.lastIndexOf(' ');
 
+        if (!trimmedContent.substring(beginIndex, endIndex).contains(s)) {
+            if (!trimmedContent.substring(beginIndex).contains(s)) return trimmedContent.substring(0, endIndex);
+            else if (!trimmedContent.substring(0, endIndex).contains(s)) return trimmedContent.substring(beginIndex);
+            else return trimmedContent;
+        }
         return trimmedContent.substring(beginIndex, endIndex);
     }
 }

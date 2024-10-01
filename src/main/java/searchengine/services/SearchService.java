@@ -80,7 +80,7 @@ public class SearchService {
             long begin = System.currentTimeMillis();
             pageList.forEach(p -> {
                 SnippetCreator snippetCreator = new SnippetCreator(p, allLemmaList, offset, limit);
-                List<SearchData> searchData = snippetCreator.createSnippet(s, pgr, pageDoubleHashMap);
+                List<SearchData> searchData = snippetCreator.createSnippet(pgr, pageDoubleHashMap);
                 searchDataList.addAll(searchData);
                 response.setCount(response.getCount() + snippetCreator.countOfSnippets);
             });
