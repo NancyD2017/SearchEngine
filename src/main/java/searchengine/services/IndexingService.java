@@ -119,10 +119,10 @@ public class IndexingService {
         return toBreak;
     }
 
-    private void fillIndexLemmaDatabases(Page page) {
+    private void fillIndexLemmaDatabases(Page page, Site siteEntity) {
         assignLuceneMorph();
         Lemmatisation lemmatisation = new Lemmatisation(page.getContent());
-        proceedLemmatisation(lemmatisation, page);
+        proceedLemmatisation(lemmatisation, page, siteEntity);
     }
 
     private IndexingResponse assignLuceneMorph() {
@@ -137,13 +137,13 @@ public class IndexingService {
         return response;
     }
 
-    private void proceedLemmatisation(Lemmatisation lemmatisation, Page page) {
+    private void proceedLemmatisation(Lemmatisation lemmatisation, Page page, Site siteEntity) {
         List<Index> indexList = Collections.synchronizedList(new ArrayList<>());
         lemmatisation.startLemmatisation()
                 .forEach((word, count) -> {
                     Runnable createLemma = () -> {
                         Lemma currentLemma = lemmasNamesAndLemmas.get(word);
-                        if (currentLemma == null) {
+                        if (currentLemma == null || currentLemma.getSite() != siteEntity) {
                             Lemma ld = new Lemma();
                             indexList.add(saveLemmaIndex(ld, 1, word, page.getSite(), page, count));
                         } else {
@@ -217,7 +217,7 @@ public class IndexingService {
                 Page page = getValues(siteEntity, pageEntity, link);
                 pageRepository.save(page);
                 if (page.getCode() < 400) {
-                    fillIndexLemmaDatabases(page);
+                    fillIndexLemmaDatabases(page, siteEntity);
                 }
             } catch (Exception ignored) {
             }

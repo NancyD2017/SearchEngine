@@ -8,7 +8,6 @@ import searchengine.model.*;
 
 import java.io.IOException;
 import java.util.*;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
 import static searchengine.controllers.ApiController.*;
@@ -18,7 +17,7 @@ import static searchengine.controllers.ApiController.*;
 public class SearchService {
     private Map<String, Integer> sortedQuery;
     private List<SearchData> searchDataList;
-    private List<Page> pageList;
+    private Set<Page> pageSet;
     private List<Lemma> allLemmaList;
 
     public SearchResponse search(String query, String url, int offset, int limit) {
@@ -30,9 +29,8 @@ public class SearchService {
                 ? siteRepository.findAll()
                 : List.of(siteRepository.findSiteByUrl(url));
 
-        AtomicBoolean isFirst = new AtomicBoolean(true);
         List<SearchData> resultList = new ArrayList<>();
-        sites.forEach(s -> resultList.addAll(proceedSearch(querySize, isFirst, offset, limit, response, s)));
+        sites.forEach(s -> resultList.addAll(proceedSearch(querySize, offset, limit, response, s)));
 
         if (query.isEmpty() || query.isBlank()) {
             response.setError("Задан пустой поисковый запрос");
@@ -66,10 +64,10 @@ public class SearchService {
     }
     private void createArrays(){
         searchDataList = new ArrayList<>();
-        pageList = new ArrayList<>();
+        pageSet = new HashSet<>();
         allLemmaList = new ArrayList<>();
     }
-    private List<SearchData> proceedSearch(int querySize, AtomicBoolean isFirst, int offset, int limit, SearchResponse response, Site s){
+    private List<SearchData> proceedSearch(int querySize, int offset, int limit, SearchResponse response, Site s){
         createArrays();
         sortedQuery.forEach((word, count) -> {
             if (querySize <= 10 || count <= 3 * querySize) {
@@ -81,16 +79,12 @@ public class SearchService {
                 lemmasList.forEach(l -> l.getIndexes()
                         .forEach(i -> currentPageList.add(indexRepository.findIndexByIndexId(i.getId()).getPage())));
 
-                if (isFirst.get()) {
-                    isFirst.set(false);
-                    pageList.addAll(currentPageList);
-                } else pageList.retainAll(currentPageList);
+                pageSet.addAll(currentPageList);
             }
         });
         PageGetterInfo pgr = new PageGetterInfo(allLemmaList);
         HashMap<Page, Double> pageDoubleHashMap = pgr.findRelevanceRel();
-
-        pageList.forEach(p -> {
+        pageSet.forEach(p -> {
             SnippetCreator snippetCreator = new SnippetCreator(p, allLemmaList, offset, limit);
             List<SearchData> searchData = snippetCreator.createSnippet(pgr, pageDoubleHashMap);
             searchDataList.addAll(searchData);

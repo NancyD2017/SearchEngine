@@ -49,24 +49,25 @@ public class SnippetCreator {
 
         for (int word = 0; word < queryWords.size(); word++) {
             String alteredContent = this.content;
+            if (normalFormsOfContextWords.get(queryW.get(word)) != null) {
+                for (String s : normalFormsOfContextWords.get(queryW.get(word))) {
+                    int wordIndex = alteredContent.indexOf(" " + s);
+                    while (wordIndex != -1) {
+                        currentOffset++;
+                        int snippetStart = Math.max(0, wordIndex - 120);
+                        int snippetEnd = Math.min(alteredContent.length(), wordIndex + 120);
+                        String readySnippet = beautifySnippet(alteredContent.substring(snippetStart, snippetEnd), s);
 
-            for (String s : normalFormsOfContextWords.get(queryW.get(word))) {
-                int wordIndex = alteredContent.indexOf(" " + s);
-                while (wordIndex != -1) {
-                    currentOffset++;
-                    int snippetStart = Math.max(0, wordIndex - 120);
-                    int snippetEnd = Math.min(alteredContent.length(), wordIndex + 120);
-                    String readySnippet = beautifySnippet(alteredContent.substring(snippetStart, snippetEnd), s);
-
-                    if (currentLimit < limit && currentOffset > offset) {
-                        currentLimit++;
-                        if (!snippetsContainWord(queryW, word, readySnippet)) {
-                            countOfSnippets++;
-                            snippets.add(boldAllWords(readySnippet));
+                        if (currentLimit < limit && currentOffset > offset) {
+                            currentLimit++;
+                            if (!snippetsContainWord(queryW, word, readySnippet)) {
+                                countOfSnippets++;
+                                snippets.add(boldAllWords(readySnippet));
+                            }
                         }
+                        alteredContent = alteredContent.substring(snippetEnd);
+                        wordIndex = alteredContent.indexOf(" " + s, wordIndex);
                     }
-                    alteredContent = alteredContent.substring(snippetEnd);
-                    wordIndex = alteredContent.indexOf(" " + s, wordIndex);
                 }
             }
         }
@@ -93,9 +94,11 @@ public class SnippetCreator {
 
     private String boldAllWords(String snippets) {
         for (String word : queryW.stream().sorted(Comparator.comparing(String::length).reversed()).toList()) {
-            for (String formedWord : normalFormsOfContextWords.get(word).stream().sorted(Comparator.comparing(String::length).reversed()).toList()) {
-                if (!snippets.contains("<b>" + formedWord + "</b>")) {
-                    snippets = snippets.replaceAll(" " + formedWord, " <b>" + formedWord + "</b>");
+            if (normalFormsOfContextWords.get(word) != null) {
+                for (String formedWord : normalFormsOfContextWords.get(word).stream().sorted(Comparator.comparing(String::length).reversed()).toList()) {
+                    if (!snippets.contains("<b>" + formedWord + "</b>")) {
+                        snippets = snippets.replaceAll(" " + formedWord, " <b>" + formedWord + "</b>");
+                    }
                 }
             }
         }
