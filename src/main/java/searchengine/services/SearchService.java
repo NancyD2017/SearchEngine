@@ -30,16 +30,18 @@ public class SearchService {
                 : List.of(siteRepository.findSiteByUrl(url));
 
         List<SearchData> resultList = new ArrayList<>();
-        sites.forEach(s -> resultList.addAll(proceedSearch(querySize, offset, limit, response, s)));
+        sites.forEach(s -> resultList.addAll(proceedSearch(querySize, response, s)));
 
         if (query.isEmpty() || query.isBlank()) {
             response.setError("Задан пустой поисковый запрос");
         } else {
             response.setResult(true);
-            response.setData(resultList
-                    .stream()
+            List<SearchData> paginatedResult = resultList.stream()
                     .sorted(Comparator.comparingDouble(SearchData::getRelevance).reversed())
-                    .toList());
+                    .skip(offset)
+                    .limit(limit)
+                    .toList();
+            response.setData(paginatedResult);
         }
         return response;
     }
@@ -67,7 +69,7 @@ public class SearchService {
         pageSet = new HashSet<>();
         allLemmaList = new ArrayList<>();
     }
-    private List<SearchData> proceedSearch(int querySize, int offset, int limit, SearchResponse response, Site s){
+    private List<SearchData> proceedSearch(int querySize, SearchResponse response, Site s){
         createArrays();
         sortedQuery.forEach((word, count) -> {
             if (querySize <= 10 || count <= 3 * querySize) {
@@ -85,7 +87,7 @@ public class SearchService {
         PageGetterInfo pgr = new PageGetterInfo(allLemmaList);
         HashMap<Page, Double> pageDoubleHashMap = pgr.findRelevanceRel();
         pageSet.forEach(p -> {
-            SnippetCreator snippetCreator = new SnippetCreator(p, allLemmaList, offset, limit);
+            SnippetCreator snippetCreator = new SnippetCreator(p, allLemmaList);
             List<SearchData> searchData = snippetCreator.createSnippet(pgr, pageDoubleHashMap);
             searchDataList.addAll(searchData);
             response.setCount(response.getCount() + snippetCreator.countOfSnippets);

@@ -13,18 +13,14 @@ public class SnippetCreator {
     private final Page p;
     private final List<Lemma> queryWords;
     private LuceneMorphology luceneMorphology;
-    private final int offset;
-    private final int limit;
     private HashMap<String, List<String>> normalFormsOfContextWords = new HashMap<>();
     private List<String> queryW;
     public int countOfSnippets = 0;
     private final String content;
 
-    public SnippetCreator(Page p, List<Lemma> queryWords, int offset, int limit) {
+    public SnippetCreator(Page p, List<Lemma> queryWords) {
         this.p = p;
         this.queryWords = queryWords;
-        this.offset = offset;
-        this.limit = limit;
         try {
             this.luceneMorphology = new RussianLuceneMorphology();
         } catch (IOException e) {
@@ -44,8 +40,6 @@ public class SnippetCreator {
 
     public List<SearchData> createSnippet(PageGetterInfo pgr, HashMap<Page, Double> pageDoubleHashMap) {
         List<String> snippets = new ArrayList<>();
-        int currentOffset = 0;
-        int currentLimit = 0;
 
         for (int word = 0; word < queryWords.size(); word++) {
             String alteredContent = this.content;
@@ -53,17 +47,14 @@ public class SnippetCreator {
                 for (String s : normalFormsOfContextWords.get(queryW.get(word))) {
                     int wordIndex = alteredContent.indexOf(" " + s);
                     while (wordIndex != -1) {
-                        currentOffset++;
+
                         int snippetStart = Math.max(0, wordIndex - 120);
                         int snippetEnd = Math.min(alteredContent.length(), wordIndex + 120);
                         String readySnippet = beautifySnippet(alteredContent.substring(snippetStart, snippetEnd), s);
 
-                        if (currentLimit < limit && currentOffset > offset) {
-                            currentLimit++;
-                            if (!snippetsContainWord(queryW, word, readySnippet)) {
-                                countOfSnippets++;
-                                snippets.add(boldAllWords(readySnippet));
-                            }
+                        if (!snippetsContainWord(queryW, word, readySnippet)) {
+                            countOfSnippets++;
+                            snippets.add(boldAllWords(readySnippet));
                         }
                         alteredContent = alteredContent.substring(snippetEnd);
                         wordIndex = alteredContent.indexOf(" " + s, wordIndex);

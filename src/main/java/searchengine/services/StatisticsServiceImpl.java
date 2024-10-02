@@ -2,24 +2,22 @@ package searchengine.services;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-import searchengine.config.*;
 import searchengine.dto.statistics.*;
 import searchengine.model.Site;
+import searchengine.model.Status;
 
-import java.util.ArrayList;
 import java.util.*;
 import static searchengine.controllers.ApiController.*;
 
 @Service
 @RequiredArgsConstructor
 public class StatisticsServiceImpl implements StatisticsService {
-    private final SitesList sites;
 
     @Override
     public StatisticsResponse getStatistics() {
         TotalStatistics total = new TotalStatistics();
         total.setSites(siteRepository.findAll().size());
-        total.setIndexing(true);
+        boolean isAnySiteIndexing = false;
 
         List<DetailedStatisticsItem> detailed = new ArrayList<>();
         List<Site> sitesList = siteRepository.findAll();
@@ -39,6 +37,9 @@ public class StatisticsServiceImpl implements StatisticsService {
                 item.setStatus(sd.getStatus().toString());
                 item.setError(sd.getLastError());
                 item.setStatusTime(sd.getStatusTime());
+                if (sd.getStatus() == Status.INDEXING) {
+                    isAnySiteIndexing = true;
+                }
             }
 
             total.setPages(total.getPages() + pages);
@@ -46,7 +47,7 @@ public class StatisticsServiceImpl implements StatisticsService {
             detailed.add(item);
 
         }
-
+        total.setIndexing(isAnySiteIndexing);
         StatisticsResponse response = new StatisticsResponse();
 
         StatisticsData data = new StatisticsData();
