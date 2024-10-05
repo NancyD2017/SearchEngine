@@ -8,6 +8,7 @@ import searchengine.model.*;
 
 import java.io.IOException;
 import java.util.*;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import static searchengine.controllers.ApiController.*;
@@ -19,6 +20,7 @@ public class SearchService {
     private List<SearchData> searchDataList;
     private Set<Page> pageSet;
     private List<Lemma> allLemmaList;
+    private HashMap<String, Lemma> hashMapLemmas = new HashMap<>();
 
     public SearchResponse search(String query, String url, int offset, int limit) {
         SearchResponse response = new SearchResponse();
@@ -64,22 +66,27 @@ public class SearchService {
                         LinkedHashMap::new
                 ));
     }
-    private void createArrays(){
+    private void createArrays(Site s){
+        hashMapLemmas = new HashMap<>();
         searchDataList = new ArrayList<>();
         pageSet = new HashSet<>();
         allLemmaList = new ArrayList<>();
+        hashMapLemmas = (HashMap<String, Lemma>) lemmaRepository.findLemmaBySiteId(s.getId())
+                .stream()
+                .collect(Collectors.toMap(Lemma::getLemma, Function.identity()));
+
     }
     private List<SearchData> proceedSearch(int querySize, SearchResponse response, Site s){
-        createArrays();
+        createArrays(s);
         sortedQuery.forEach((word, count) -> {
             if (querySize <= 10 || count <= 3 * querySize) {
 
-                List<Lemma> lemmasList = lemmaRepository.findLemmaBySiteIdAndLemma(s.getId(), word);
-                allLemmaList.addAll(lemmasList);
+                Lemma lemma = hashMapLemmas.get(word);
+                allLemmaList.add(lemma);
                 List<Page> currentPageList = new ArrayList<>();
 
-                lemmasList.forEach(l -> l.getIndexes()
-                        .forEach(i -> currentPageList.add(indexRepository.findIndexByIndexId(i.getId()).getPage())));
+                lemma.getIndexes()
+                        .forEach(i -> currentPageList.add(indexRepository.findIndexByIndexId(i.getId()).getPage()));
 
                 pageSet.addAll(currentPageList);
             }

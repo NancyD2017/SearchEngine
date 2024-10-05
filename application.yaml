@@ -15,7 +15,7 @@ spring:
     show-sql: true
 indexing-settings:
   sites:
-    - url: https://market.fitnesshouse.ru
-      name: fitness house
     - url: https://ipfran.ru/
       name: ИПФ РАН
+    - url: http://www.playback.ru/
+      name: Playback.ru

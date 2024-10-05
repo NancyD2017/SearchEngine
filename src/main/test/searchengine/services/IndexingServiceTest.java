@@ -23,12 +23,12 @@ public class IndexingServiceTest {
     @Autowired
     LemmaRepository lemmaRepository;
     @Test
-    public void testIndexServiceTime(){ //15200
+    public void testIndexServiceTime(){ //55c - старая версия, неправильная. Правильная 57с
         long begin = System.currentTimeMillis();
         SitesList sl = new SitesList();
         Site s = new Site();
-        s.setName("fitness house");
-        s.setUrl("https://market.fitnesshouse.ru");
+        s.setName("Playback.ru");
+        s.setUrl("http://www.playback.ru/");
         sl.setSites(List.of(s));
 
         IndexingService indexingService = new IndexingService(sl);

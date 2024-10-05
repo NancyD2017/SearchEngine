@@ -1,6 +1,11 @@
 package searchengine.services;
 
 import lombok.RequiredArgsConstructor;
+import org.apache.http.HttpResponse;
+import org.apache.http.client.methods.HttpGet;
+import org.apache.http.impl.client.CloseableHttpClient;
+import org.apache.http.impl.client.HttpClients;
+import org.apache.http.util.EntityUtils;
 import org.apache.lucene.morphology.russian.RussianLuceneMorphology;
 import org.springframework.stereotype.Service;
 import searchengine.config.*;
@@ -13,8 +18,9 @@ import java.net.*;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.*;
-import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.Collectors;
 
 import static searchengine.controllers.ApiController.*;
 
@@ -25,8 +31,9 @@ public class IndexingService {
     private AtomicBoolean isIndexingStopped = new AtomicBoolean(false);
     private final ForkJoinPool pool = new ForkJoinPool(Runtime.getRuntime().availableProcessors());
     private final HashMap<String, Lemma> lemmasNamesAndLemmas = new HashMap<>();
-    static ArrayList<Thread> lemmatisationThreads = new ArrayList<>();
+    private final CloseableHttpClient httpClient = HttpClients.createDefault();
     IndexingResponse fillIndexLemmaDatabasesError = null;
+    private final ConcurrentHashMap<String, Page> cache = new ConcurrentHashMap<>();
 
     public IndexingResponse startIndexing() {
         IndexingResponse response = new IndexingResponse();
@@ -36,31 +43,21 @@ public class IndexingService {
             response.setError("Индексация уже запущена");
             return response;
         }
+        ExecutorService executor = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
+        List<Future<?>> futures = new ArrayList<>();
         for (searchengine.config.Site site : sites.getSites()) {
-
-            findEntityInSiteRepository(site.getName(), site.getUrl())
-                    .ifPresent(sitesL -> {
-                        List<Page> pages = pageRepository.findPagesBySite(sitesL);
-                        List<Index> indexes = new ArrayList<>();
-                        List<Lemma> lemmas = lemmaRepository.findLemmaBySiteId(sitesL.getId());
-                        pages.forEach(p -> indexes.addAll(indexRepository.findIndexesByPageId(p.getId())));
-                        indexRepository.deleteAll(indexes);
-                        lemmaRepository.deleteAll(lemmas);
-                        pageRepository.deleteAll(pages);
-                        siteRepository.delete(sitesL);
-                    });
-
-            Site siteEntity = new Site();
-            siteEntity.setName(site.getName());
-            siteEntity.setUrl(site.getUrl());
-            siteEntity.setLastError("");
-            siteEntity.setStatusTime(LocalDateTime.now());
-            siteEntity.setStatus(Status.INDEXING);
-            siteRepository.save(siteEntity);
-
-            indexingForPageDatabase(site, siteEntity);
-            if (fillIndexLemmaDatabasesError != null) return fillIndexLemmaDatabasesError;
+            futures.add(createIndexingTask(site, executor));
         }
+        for (Future<?> future : futures) {
+            try {
+                future.get();
+            } catch (Exception e) {
+                response.setResult(false);
+                response.setError("Ошибка многопоточности");
+                return response;
+            }
+        }
+        executor.shutdown();
         response.setResult(true);
         return response;
     }
@@ -96,6 +93,36 @@ public class IndexingService {
 
         response.setResult(true);
         return response;
+    }
+    private Future<?> createIndexingTask(searchengine.config.Site site, ExecutorService executor){
+        Runnable task = () -> {
+            findEntityInSiteRepository(site.getName(), site.getUrl())
+                    .ifPresent(sitesL -> {
+                        List<Page> pages = pageRepository.findPagesBySite(sitesL);
+                        List<Index> indexes = new ArrayList<>();
+                        List<Lemma> lemmas = lemmaRepository.findLemmaBySiteId(sitesL.getId());
+                        pages.forEach(p -> indexes.addAll(indexRepository.findIndexesByPageId(p.getId())));
+                        indexRepository.deleteAll(indexes);
+                        lemmaRepository.deleteAll(lemmas);
+                        pageRepository.deleteAll(pages);
+                        siteRepository.delete(sitesL);
+                    });
+
+            Site siteEntity = new Site();
+            siteEntity.setName(site.getName());
+            siteEntity.setUrl(site.getUrl());
+            siteEntity.setLastError("");
+            siteEntity.setStatusTime(LocalDateTime.now());
+            siteEntity.setStatus(Status.INDEXING);
+            siteRepository.save(siteEntity);
+
+            indexingForPageDatabase(site, siteEntity);
+            if (fillIndexLemmaDatabasesError != null) {
+                throw new RuntimeException(String.valueOf(fillIndexLemmaDatabasesError));
+            }
+        };
+        Future<?> future = executor.submit(task);
+        return future;
     }
 
     private boolean proceedIndexingPage(String path) {
@@ -138,40 +165,55 @@ public class IndexingService {
     }
 
     private void proceedLemmatisation(Lemmatisation lemmatisation, Page page, Site siteEntity) {
-        List<Index> indexList = Collections.synchronizedList(new ArrayList<>());
-        lemmatisation.startLemmatisation()
-                .forEach((word, count) -> {
-                    Runnable createLemma = () -> {
-                        Lemma currentLemma = lemmasNamesAndLemmas.get(word);
-                        if (currentLemma == null || currentLemma.getSite() != siteEntity) {
-                            Lemma ld = new Lemma();
-                            indexList.add(saveLemmaIndex(ld, 1, word, page.getSite(), page, count));
-                        } else {
-                            indexList.add(
-                                    saveLemmaIndex(currentLemma,
-                                            currentLemma.getFrequency() + 1,
-                                            currentLemma.getLemma(),
-                                            currentLemma.getSite(),
-                                            page,
-                                            count));
-                        }
-                    };
-                    Thread t = new Thread(createLemma);
-                    lemmatisationThreads.add(t);
-                    t.start();
-                });
-        runThreads(lemmatisationThreads);
-        indexRepository.saveAll(indexList);
-    }
+        ExecutorService executor = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
+        List<Future<List<Index>>> futures = new ArrayList<>();
+        HashMap<String, Integer> lemmas = lemmatisation.startLemmatisation();
 
-    private static void runThreads(ArrayList<Thread> threads) {
-        for (Thread t : threads) {
+        int chunkSize = lemmas.size() / Runtime.getRuntime().availableProcessors();
+        for (int i = 0; i < Runtime.getRuntime().availableProcessors(); i++) {
+            int start = i * chunkSize;
+            int end = (i == Runtime.getRuntime().availableProcessors() - 1) ? lemmas.size() : start + chunkSize;
+            Map<String, Integer> wordCounts = lemmas.entrySet().stream()
+                    .skip(start)
+                    .limit(end - start)
+                    .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+
+            futures.add(createLemmatisationTask(executor, wordCounts, siteEntity, page));
+        }
+
+        List<Index> indexList = new ArrayList<>();
+        for (Future<List<Index>> future : futures) {
             try {
-                t.join();
-            } catch (InterruptedException e) {
-                e.printStackTrace();
+                indexList.addAll(future.get());
+            } catch (Exception ignored) {
             }
         }
+        executor.shutdown();
+        indexRepository.saveAll(indexList);
+    }
+    private Future<List<Index>> createLemmatisationTask(ExecutorService executor, Map<String, Integer> wordCounts, Site siteEntity, Page page){
+        return executor.submit(() -> {
+            List<Index> indexList = new ArrayList<>();
+            wordCounts.forEach((word, count) -> {
+                Lemma currentLemma = lemmasNamesAndLemmas.get(word);
+                if (currentLemma == null || (!currentLemma.getLemma().equals(word) || currentLemma.getSite() != siteEntity)) {
+                    Lemma ld = new Lemma();
+                    ld.setLemma(word);
+                    ld.setSite(siteEntity);
+                    indexList.add(saveLemmaIndex(ld, 1, word, page.getSite(), page, count));
+                    lemmasNamesAndLemmas.put(word, ld);
+                } else {
+                    indexList.add(
+                            saveLemmaIndex(currentLemma,
+                                    currentLemma.getFrequency() + 1,
+                                    currentLemma.getLemma(),
+                                    currentLemma.getSite(),
+                                    page,
+                                    count));
+                }
+            });
+            return indexList;
+        });
     }
 
     private Index saveLemmaIndex(Lemma lemma, int frequency, String lemmaWord, Site site, Page page, int rank) {
@@ -235,28 +277,29 @@ public class IndexingService {
     }
 
     private Page getValues(Site siteEntity, Page pageEntity, String l) {
-        try {
-            URL url = new URL(l);
-            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-            connection.setRequestMethod("GET");
-            connection.setRequestProperty("Connection", "keep-alive");
-            connection.setConnectTimeout(5000);
-            connection.setReadTimeout(5000);
-            connection.connect();
-            int code = connection.getResponseCode();
+        if (cache.containsKey(l)) {
+            return cache.get(l);
+        }
+        Page page = getValuesImpl(siteEntity, pageEntity, l);
+        cache.put(l, page);
+        return page;
+    }
 
-            pageEntity.setCode(code);
+    private Page getValuesImpl(Site siteEntity, Page pageEntity, String l) {
+        try {
+            HttpGet request = new HttpGet(l);
+            HttpResponse response = httpClient.execute(request);
+            pageEntity.setCode(response.getStatusLine().getStatusCode());
+
             pageEntity.setSite(siteEntity);
             pageEntity.setPath(l);
-            if (code == HttpURLConnection.HTTP_OK) {
-                try (InputStream inputStream = connection.getInputStream()) {
-                    String content = new String(inputStream.readAllBytes(), StandardCharsets.UTF_8);
-                    pageEntity.setContent(content);
-                }
+            if (response.getStatusLine().getStatusCode() == HttpURLConnection.HTTP_OK) {
+                String content = EntityUtils.toString(response.getEntity(), StandardCharsets.UTF_8);
+                pageEntity.setContent(content);
             } else {
-                pageEntity.setContent("Error");
+                pageEntity.setContent("");
                 siteEntity.setStatus(Status.FAILED);
-                siteEntity.setLastError("Не удалось установить соединение с сайтом");
+                siteEntity.setLastError("Не удалось установить соединение с одной из страниц");
                 siteRepository.save(siteEntity);
             }
             siteEntity.setStatusTime(LocalDateTime.now());
