@@ -121,8 +121,7 @@ public class IndexingService {
                 throw new RuntimeException(String.valueOf(fillIndexLemmaDatabasesError));
             }
         };
-        Future<?> future = executor.submit(task);
-        return future;
+        return executor.submit(task);
     }
 
     private boolean proceedIndexingPage(String path) {
@@ -167,13 +166,13 @@ public class IndexingService {
     private void proceedLemmatisation(Lemmatisation lemmatisation, Page page, Site siteEntity) {
         ExecutorService executor = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors());
         List<Future<List<Index>>> futures = new ArrayList<>();
-        HashMap<String, Integer> lemmas = lemmatisation.startLemmatisation();
+        HashMap<String, Integer> lemmasMap = lemmatisation.startLemmatisation();
 
-        int chunkSize = lemmas.size() / Runtime.getRuntime().availableProcessors();
+        int chunkSize = lemmasMap.size() / Runtime.getRuntime().availableProcessors();
         for (int i = 0; i < Runtime.getRuntime().availableProcessors(); i++) {
             int start = i * chunkSize;
-            int end = (i == Runtime.getRuntime().availableProcessors() - 1) ? lemmas.size() : start + chunkSize;
-            Map<String, Integer> wordCounts = lemmas.entrySet().stream()
+            int end = (i == Runtime.getRuntime().availableProcessors() - 1) ? lemmasMap.size() : start + chunkSize;
+            Map<String, Integer> wordCounts = lemmasMap.entrySet().stream()
                     .skip(start)
                     .limit(end - start)
                     .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));

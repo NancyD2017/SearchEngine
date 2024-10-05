@@ -23,7 +23,7 @@ public class IndexingServiceTest {
     @Autowired
     LemmaRepository lemmaRepository;
     @Test
-    public void testIndexServiceTime(){ //55c - старая версия, неправильная. Правильная 57с
+    public void testIndexServiceTime(){ //57с
         long begin = System.currentTimeMillis();
         SitesList sl = new SitesList();
         Site s = new Site();

@@ -80,7 +80,6 @@ public class SearchService {
         createArrays(s);
         sortedQuery.forEach((word, count) -> {
             if (querySize <= 10 || count <= 3 * querySize) {
-
                 Lemma lemma = hashMapLemmas.get(word);
                 allLemmaList.add(lemma);
                 List<Page> currentPageList = new ArrayList<>();
