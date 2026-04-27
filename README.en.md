@@ -7,13 +7,13 @@ A fully functional **web search engine** built with Spring Boot — supporting m
 ## Screenshots
 
 <!-- Screenshot: Main dashboard page showing the list of indexed sites with their status (INDEXED / INDEXING / FAILED) and page/lemma counts -->
-![Dashboard](docs/dashboard.png)
+![image](https://github.com/user-attachments/assets/b3df694a-beac-42ac-b869-1a5a9644f8f9)
 
 <!-- Screenshot: Indexing control panel — show the "Start Indexing" / "Stop Indexing" buttons and the progress indicator while indexing is running -->
-![Indexing Panel](docs/indexing.png)
+![image](https://github.com/user-attachments/assets/855a1c87-aef2-4774-b9ec-64c862e442c2)
 
 <!-- Screenshot: Search results page — show a query entered in the search bar and 3–5 result cards below, each with site name, page title, URL, and a highlighted text snippet -->
-![Search Results](docs/search-results.png)
+![image](https://github.com/user-attachments/assets/93a0d78c-7b2e-4cc3-aa51-4f82fdf2a610)
 
 ---
 
